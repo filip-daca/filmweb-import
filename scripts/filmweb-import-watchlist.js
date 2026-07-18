@@ -1,5 +1,5 @@
 /**
- * Filmweb Import Watchlist Script
+ * Filmweb Import Watchlist Script (fixed isImportLog detection)
  *
  * Purpose: Takes JSON output from imdb-ratings-to-filmweb-json.js or 
  *          imdb-watchlist-to-filmweb-json.js (or a previous import log) and
@@ -105,9 +105,26 @@ async function submitWant2See(filmwebId, level = WANT2SEE_LEVEL) {
   }
 }
 
+/**
+ * Improved detection for import-log vs original lookup results.
+ *
+ * Original lookup results (from imdb-*-to-filmweb-json.js) include fields like:
+ *   filmwebId, originalTitle/imdbTitle, yourRating, year, status: 'found'
+ *
+ * Import logs (previous run) include fields like:
+ *   status ("success"/"error"), error, data, rating/level, etc.
+ *
+ * To avoid misclassifying original results (which also have a `status` field),
+ * we require import-log entries to have `status` AND at least one of
+ * the typical log-specific fields: rating, rate, level, error, data, details.
+ */
 function isImportLog(arr) {
   if (!Array.isArray(arr) || arr.length === 0) return false;
-  return arr.every(item => typeof item === 'object' && item !== null && 'status' in item);
+  return arr.every(item => {
+    if (typeof item !== 'object' || item === null || !('status' in item)) return false;
+    const hasLogField = ('rating' in item) || ('rate' in item) || ('level' in item) || ('error' in item) || ('data' in item) || ('details' in item);
+    return Boolean(hasLogField);
+  });
 }
 
 async function importWatchlistToFilmweb() {
