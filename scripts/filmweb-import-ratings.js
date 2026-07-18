@@ -4,6 +4,7 @@
  * - Reads XSRF token from XSRF-TOKEN cookie and sets X-XSRF-TOKEN header
  * - Default import delay increased to 700ms
  * - If given an "import log" JSON (previous run results), it will retry only failed entries
+ * - Fix: handle empty/no-response body when parsing response.json()
  *
  * Usage: Paste this script in Chrome console on filmweb.pl while logged in
  */
@@ -89,13 +90,41 @@ async function submitRating(filmwebId, rating) {
       };
     }
 
-    const data = await response.json();
+    // Safely parse response body: some successful responses may have no body
+    let parsed = null;
+    try {
+      const contentType = response.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        // Try to parse JSON, but guard against empty body or invalid JSON
+        try {
+          parsed = await response.json();
+        } catch (e) {
+          // fallback: attempt to read as text and keep raw text
+          try {
+            const text = await response.text();
+            parsed = text && text.length > 0 ? text : null;
+          } catch (e2) {
+            parsed = null;
+          }
+        }
+      } else {
+        // Not JSON: attempt to read text (may be empty)
+        try {
+          const text = await response.text();
+          parsed = text && text.length > 0 ? text : null;
+        } catch (e) {
+          parsed = null;
+        }
+      }
+    } catch (e) {
+      parsed = null;
+    }
     
     return {
       filmwebId,
       rating,
       status: 'success',
-      data: data
+      data: parsed
     };
 
   } catch (error) {
