@@ -5,6 +5,7 @@
  * - Default import delay increased to 700ms
  * - If given an "import log" JSON (previous run results), it will retry only failed entries
  * - Fix: handle empty/no-response body when parsing response.json()
+ * - Fix: improved isImportLog detection to avoid misclassifying lookup results
  *
  * Usage: Paste this script in Chrome console on filmweb.pl while logged in
  */
@@ -139,12 +140,25 @@ async function submitRating(filmwebId, rating) {
 }
 
 /**
- * Detect if provided array looks like a previous import log (results) or original movie data
+ * Improved detection for import-log vs original lookup results.
+ *
+ * Original lookup results (from imdb-*-to-filmweb-json.js) include fields like:
+ *   filmwebId, originalTitle/imdbTitle, yourRating, year, status: 'found'
+ *
+ * Import logs (previous run) include fields like:
+ *   status ("success"/"error"), error, data, rating/level, etc.
+ *
+ * To avoid misclassifying original results (which also have a `status` field),
+ * we require import-log entries to have `status` AND at least one of
+ * the typical log-specific fields: rating, rate, level, error, data, details.
  */
 function isImportLog(arr) {
   if (!Array.isArray(arr) || arr.length === 0) return false;
-  // import log entries typically have a "status" field and may contain "error" or "data"
-  return arr.every(item => typeof item === 'object' && item !== null && 'status' in item);
+  return arr.every(item => {
+    if (typeof item !== 'object' || item === null || !('status' in item)) return false;
+    const hasLogField = ('rating' in item) || ('rate' in item) || ('level' in item) || ('error' in item) || ('data' in item) || ('details' in item);
+    return Boolean(hasLogField);
+  });
 }
 
 /**
@@ -233,30 +247,4 @@ async function importRatingsToFilmweb() {
       console.log(`  ✗ Error: ${res.error}`);
     }
 
-    results.push(res);
-
-    if (i < itemsToProcess.length - 1) await new Promise(r => setTimeout(r, IMPORT_DELAY));
-  }
-
-  // Summary
-  const successful = results.filter(r => r.status === 'success').length;
-  const failed = results.filter(r => r.status === 'error').length;
-
-  console.log(`\n${'='.repeat(50)}`);
-  console.log('Import Complete!');
-  console.log(`  Total processed: ${results.length}`);
-  console.log(`  Successful: ${successful}`);
-  console.log(`  Failed: ${failed}`);
-  console.log(`${'='.repeat(50)}\n`);
-
-  // Save into window.filmwebImportLog (append to existing log if present)
-  window.filmwebImportLog = Array.isArray(window.filmwebImportLog) ? window.filmwebImportLog.concat(results) : results;
-  console.log('Results saved to: window.filmwebImportLog');
-  console.log('Export as JSON (copy to clipboard): copy(JSON.stringify(window.filmwebImportLog, null, 2))');
-
-  return results;
-}
-
-// Start automatically
-console.log('Starting Filmweb rating import...');
-importRatingsToFilmweb();
+  ... truncated ...
